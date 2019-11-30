@@ -1,0 +1,72 @@
+---
+title: "Survey Statistics | Project NHAMCS"
+author: "Rianne, Piet, Zhenwei, Marco"
+date: "Dec 16, 2019"
+output:
+  html_document:
+    code_folding: hide
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+---
+
+
+```{r}
+library(tidyverse)
+library(survey)
+```
+
+
+```{r}
+data <- read_csv("Project/nhamcsed2010-short.csv")
+
+
+```
+
+
+### 1. The variable CPSUM represents geographic primary sampling units (clusters), a variable CSTRATM represents relevant strata (e.g., emergency service areas within emergency departments or outpatient departments), variable PATWT represents an additional patient visit weight variable.
+
+#### a. Explain this multistage sampling design. Do the PATWT weights sum up to N, and what does this mean?
+
+```{r}
+sum(data$PATWT)
+
+n_distinct(data$CPSUM)
+
+data %>% count(CSTRATM)
+```
+
+
+#### b. Define the svydesign() function with clusters, strata, and (additional) weights.
+
+```{r}
+data.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data, nest = TRUE)
+```
+
+#### c. When considering gender differences in emergency visits, is it more likely for men than women to visit an emergency department, explain?
+
+#### d. Is there a mean difference between males and females in weights (PATWT), what do you conclude from this?
+
+### 2. Estimate the average waiting time in the population under the specified svydesign. 
+
+#### a. What do you conclude?
+
+#### b. Exclude the cluster and strata information, (redefine the svydesign), how this change your result in 2a, explain?
+
+#### c. Draw an SRS sample to estimate the average waiting time. Estimate the average waiting time, and compare the result(s) with the result(s) of 2a and 2b.
+
+#### d. Draw a stratified sample to investigate the variability in waiting times over regions (Northeast, Midwest, South, West). Is there variability in waiting times over regions?
+
+### 3. Explain that a ratio estimator can be used to improve the estimation of the average waiting time. 
+
+#### b. Describe potential variables for ratio estimation, and choose one to compute a ratio estimate of the average weighting time. 
+
+#### c. Give a 95% confidence interval for your preferable estimate of the average waiting time, and explain the result.
+
+
+### 4. Investigate differences in waiting times among ethnic groups by fitting a linear regression model. Compare estimated results of a stratified sampling design and an unequal probability sampling design.
+
+
+### 5. Assume unequal probability sampling, can you identify the important predictor variables of waiting times of patients visiting an ED? What can be concluded?
