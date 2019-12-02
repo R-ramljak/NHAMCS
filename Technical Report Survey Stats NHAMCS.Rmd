@@ -16,11 +16,14 @@ output:
 ```{r}
 library(tidyverse)
 library(survey)
+library(sampling)
+library(kableExtra)
 ```
 
 
 ```{r}
-data <- read_csv("Project/nhamcsed2010-short.csv")
+data <- read_csv("nhamcsed2010-short.csv") %>%
+  rownames_to_column("id")
 
 
 ```
@@ -32,12 +35,9 @@ data <- read_csv("Project/nhamcsed2010-short.csv")
 
 ```{r}
 sum(data$PATWT)
-
-n_distinct(data$CPSUM)
-
-data %>% count(CSTRATM)
 ```
 
+Yes, the weights add up to N.
 
 #### b. Define the svydesign() function with clusters, strata, and (additional) weights.
 
@@ -47,17 +47,70 @@ data.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data =
 
 #### c. When considering gender differences in emergency visits, is it more likely for men than women to visit an emergency department, explain?
 
+```{r}
+# Population estimates --> 
+svytotal(~interaction(SEX), data.design)
+```
+
+
 #### d. Is there a mean difference between males and females in weights (PATWT), what do you conclude from this?
 
 ### 2. Estimate the average waiting time in the population under the specified svydesign. 
 
 #### a. What do you conclude?
 
+```{r}
+(result.2a <- svymean(~WAITTIME, data.design, na.rm = T))
+```
+The average waiting time is almost 45 min. 
+
 #### b. Exclude the cluster and strata information, (redefine the svydesign), how this change your result in 2a, explain?
+
+```{r}
+# Defining the design object but without any design specifications
+data.design.exc <- svydesign(id = ~id, weight = ~PATWT, data = data, nest = TRUE) # is nest necessary?
+
+(result.2b <- svymean(~WAITTIME, data.design.exc, na.rm = T))
+```
+
+The estimates are the same (about 45 min) but the the SE are too small for the option without any design specifications. Explanation needed.
 
 #### c. Draw an SRS sample to estimate the average waiting time. Estimate the average waiting time, and compare the result(s) with the result(s) of 2a and 2b.
 
+```{r}
+# With the srswr function we can draw a srs, which gives us a vector of the sample cases
+sample.2c.vec <- srswr(n = 1000, N = length(data$id))
+sample.2c <- getdata(data, sample.2c.vec)
+
+# We can then create another svydesign object and estimate the average waiting time
+sample.2c.des <- svydesign(id = ~id, data = sample.2c, nest = TRUE) # is nest necessary?
+(result.2c <- svymean(~WAITTIME, sample.2c.des, na.rm = T))
+
+# Comparing the results 
+name.results <- c("2a Estimate (design specified)", "2b Estimate (design not specified)", "2c Estimate (new srs)")
+
+# Still need to add the SEs to the table for better comparison
+results.2 <- tibble(name.results, estimates = c(result.2a, result.2b, result.2c))
+
+```
+
+
 #### d. Draw a stratified sample to investigate the variability in waiting times over regions (Northeast, Midwest, South, West). Is there variability in waiting times over regions?
+
+```{r}
+# In order for drawing a stratified sample we need to arrange the original dataset in ascending strata order (Region)
+data.strata.prep <- data %>%
+  arrange(REGION)
+
+# With the strata function we can draw a stratified srs. The size vector specifies the strata sample sizes 
+# Question: Should we change the sizes to PPS?
+sample.2d.vec <- strata(data = data.strata.prep, stratanames = "REGION", size = c(250, 250, 250, 250), method = "srswr")
+sample.2d <- getdata(data.strata.prep, sample.2c.vec)
+
+sample.2d.des <- svydesign(id = ~id, data = sample.2d, nest = TRUE) # is nest necessary?
+svymean(~WAITTIME, sample.2d.des, na.rm = T)
+```
+
 
 ### 3. Explain that a ratio estimator can be used to improve the estimation of the average waiting time. 
 
