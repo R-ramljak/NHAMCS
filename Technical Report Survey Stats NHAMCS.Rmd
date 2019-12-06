@@ -89,7 +89,7 @@ name.results <- c("2a Estimate (design specified)", "2b Estimate (design not spe
 
 # Still need to add the SEs to the table for better comparison
 results.2 <- tibble(name.results, estimates = c(result.2a, result.2b, result.2c),
-                    SE = c(attr(result.2a, which = "var"), attr(result.2b, which = "var"), attr(result.2c, which = "var")))
+                    SE = c(map_dbl(list(result.2a, result.2b, result.2c), ~attr(., which = "var"))))
 
 ```
 
