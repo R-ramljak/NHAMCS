@@ -24,8 +24,6 @@ library(kableExtra)
 ```{r}
 data <- read_csv("nhamcsed2010-short.csv") %>%
   rownames_to_column("id")
-
-
 ```
 
 
@@ -68,7 +66,7 @@ The average waiting time is almost 45 min.
 
 ```{r}
 # Defining the design object but without any design specifications
-data.design.exc <- svydesign(id = ~id, weight = ~PATWT, data = data, nest = TRUE) # is nest necessary?
+data.design.exc <- svydesign(id = ~id, weight = ~PATWT, data = data, nest = TRUE) # nest can be basically ignored
 
 (result.2b <- svymean(~WAITTIME, data.design.exc, na.rm = T))
 ```
@@ -83,14 +81,15 @@ sample.2c.vec <- srswr(n = 1000, N = length(data$id))
 sample.2c <- getdata(data, sample.2c.vec)
 
 # We can then create another svydesign object and estimate the average waiting time
-sample.2c.des <- svydesign(id = ~id, data = sample.2c, nest = TRUE) # is nest necessary?
-(result.2c <- svymean(~WAITTIME, sample.2c.des, na.rm = T))
+sample.2c.des <- svydesign(id = ~id, data = sample.2c, nest = TRUE)
+a <- result.2c <- svymean(~WAITTIME, sample.2c.des, na.rm = T)
 
 # Comparing the results 
 name.results <- c("2a Estimate (design specified)", "2b Estimate (design not specified)", "2c Estimate (new srs)")
 
 # Still need to add the SEs to the table for better comparison
-results.2 <- tibble(name.results, estimates = c(result.2a, result.2b, result.2c))
+results.2 <- tibble(name.results, estimates = c(result.2a, result.2b, result.2c),
+                    SE = c(attr(result.2a, which = "var"), attr(result.2b, which = "var"), attr(result.2c, which = "var")))
 
 ```
 
