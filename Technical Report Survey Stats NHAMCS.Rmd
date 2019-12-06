@@ -75,9 +75,12 @@ The estimates are the same (about 45 min) but the the SE are too small for the o
 
 #### c. Draw an SRS sample to estimate the average waiting time. Estimate the average waiting time, and compare the result(s) with the result(s) of 2a and 2b.
 
+Implement formulas??
+implement different sample sizes c to see the decrease of the SE (1000, 5000, 10000)
+
 ```{r}
 # With the srswr function we can draw a srs, which gives us a vector of the sample cases
-sample.2c.vec <- srswr(n = 1000, N = length(data$id))
+sample.2c.vec <- srswr(n = 2000, N = length(data$id))
 sample.2c <- getdata(data, sample.2c.vec)
 
 # We can then create another svydesign object and estimate the average waiting time
@@ -89,12 +92,14 @@ name.results <- c("2a Estimate (design specified)", "2b Estimate (design not spe
 
 # Still need to add the SEs to the table for better comparison
 results.2 <- tibble(name.results, estimates = c(result.2a, result.2b, result.2c),
-                    SE = c(map_dbl(list(result.2a, result.2b, result.2c), ~attr(., which = "var"))))
+                    SE = c(map_dbl(list(result.2a, result.2b, result.2c), ~sqrt(attr(., which = "var")))))
 
 ```
 
 
 #### d. Draw a stratified sample to investigate the variability in waiting times over regions (Northeast, Midwest, South, West). Is there variability in waiting times over regions?
+
+implement PPS -_> literature
 
 ```{r}
 # In order for drawing a stratified sample we need to arrange the original dataset in ascending strata order (Region)
@@ -115,10 +120,21 @@ svymean(~WAITTIME, sample.2d.des, na.rm = T)
 
 #### b. Describe potential variables for ratio estimation, and choose one to compute a ratio estimate of the average weighting time. 
 
+we describe multiple ones but we will probably choose the ambulance one
+
 #### c. Give a 95% confidence interval for your preferable estimate of the average waiting time, and explain the result.
+
 
 
 ### 4. Investigate differences in waiting times among ethnic groups by fitting a linear regression model. Compare estimated results of a stratified sampling design and an unequal probability sampling design.
 
+two models: 
+are the individual weights the defined survey weights?
+are the stratified weights in comparison to the individual weights related to ethnicity? What do we base the strata on? are these the same as beforehand or are these new strata that we ourselves need to define?
+is it just comparing a model with the cluster and strata info like in the beginning and one model without any info
+
 
 ### 5. Assume unequal probability sampling, can you identify the important predictor variables of waiting times of patients visiting an ED? What can be concluded?
+
+
+We dont know the severity of the patients, probably the most important predictor..
