@@ -66,6 +66,27 @@ show the r code line of the specified design.
 
 prop.table(table(data$WAITTIME))[2]
 ```
+
+Imputing data by Zhenwei
+```{r}
+data.imputed <- data %>%
+  mutate(WAITTIME.prop = case_when(WAITTIME != -9 & WAITTIME != -7 & LOV != -9 ~ WAITTIME/LOV,
+                                 TRUE ~ NA_real_)) %>%
+  mutate(WAITTIME.imputed = case_when(WAITTIME != -9 & WAITTIME != -7 ~ WAITTIME,
+                                      WAITTIME == -7 ~ -7,
+                                      WAITTIME == -9 & LOV != -9 ~ LOV * base::mean(WAITTIME.prop, na.rm= T)))
+prop.table(table(data.imputed$LOV))[1]
+data.imputed %>%
+  select(WAITTIME.imputed) %>%
+  filter(is.na(WAITTIME.imputed))
+prop.table(table(data$WAITTIME))[2]
+prop.table(table(data.imputed$WAITTIME.imputed))[1:2]
+
+data.design.imputed <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.imputed, nest = TRUE)
+(result.2a.imputed <- svymean(~WAITTIME.imputed, data.design.imputed, na.rm = T))
+```
+
+
 The average waiting time is almost 45 min. with a SE of 1.8512 --> interpretation
 Show the proportion of missings --> MCAR? about 6.6. percent, and 2.7 percent not applicable (2.7 have probably too long or felt better) --> 6.6 percent can be imputed with proportion technique about 5 decreasesd show in presentation -_> comparison
 
@@ -215,7 +236,8 @@ reg.data.stratified.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight =
 model.Q4.original <- svyglm(formula = WAITTIME ~ ETHUN, design = reg.data.original.design, data = reg.data.original)
 model.Q4.original$R2 <- 1 - model.Q4.original$deviance/model.Q4.original$null.deviance
 
-model.Q4.SRS <- svyglm(formula = WAITTIME ~ ETHUN, design = reg.data.srs.design, data = reg.data.srs)
+model.Q4.SRS <- svyglm(formula = WAITTIME ~ ETHUN, family = gaussian(link = "identity"), design = reg.data.srs.design, data = reg.data.srs)
+summary(model.Q4.SRS)
 model.Q4.SRS$R2 <- 1 - model.Q4.SRS$deviance/model.Q4.SRS$null.deviance 
 
 model.Q4.stratified <- svyglm(formula = WAITTIME ~ ETHUN, design = reg.data.stratified.design, data = reg.data.stratified)
