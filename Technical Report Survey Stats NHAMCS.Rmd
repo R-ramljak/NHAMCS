@@ -18,6 +18,8 @@ library(tidyverse)
 library(survey)
 library(sampling)
 library(kableExtra)
+library(svglite)
+'%!in%' <- function(x,y)!('%in%'(x,y))
 ```
 
 
@@ -129,14 +131,19 @@ data.strata.prep <- data %>%
 strata.sizes <- data %>%
   group_by(REGION) %>%
   summarise(prop = (n() / 34936)) %>%
-  mutate(size = round(prop * 5000)) # --> this number can change due to sample sizes decided above
+  mutate(strata.size = round(prop * 5000)) %>% # --> this number can change due to sample sizes decided above
+  mutate(population.size = prop * 34936) 
 
-sample.2d.vec <- strata(data = data.strata.prep, stratanames = "REGION", size = strata.sizes$size, method = "srswr")
-sample.2d <- getdata(data.strata.prep, sample.2c.vec)
+sample.2d.vec <- strata(data = data.strata.prep, stratanames = "REGION", size = strata.sizes$strata.size, method = "srswr")
+sample.2d <- getdata(data.strata.prep, sample.2c.vec) %>%
+  left_join(strata.sizes, by = "REGION") %>% # join strata specific sizes (4 levels for 4 regions)
+  mutate(weights.strata = population.size / strata.size) %>% # calculating strata specific weights (Nh / nh)
+  mutate(weights.final = PATWT * weights.strata) # Combining the original weights with the strata specific weights 
 
-sample.2d.des <- svydesign(id = ~id, data = sample.2d, nest = TRUE) # is nest necessary?
+sample.2d.des <- svydesign(id = ~id, weights = ~weights.final, data = sample.2d, nest = TRUE) # added new weights
 svymean(~WAITTIME, sample.2d.des, na.rm = T)
 
+# Testing the variability between regions concerning waiting time
 svyby(~WAITTIME, ~REGION, sample.2d.des, svymean, deff = T)
 ```
 
@@ -155,6 +162,73 @@ we describe multiple ones but we will probably choose the ambulance one
 
 
 ### 4. Investigate differences in waiting times among ethnic groups by fitting a linear regression model. Compare estimated results of a stratified sampling design and an unequal probability sampling design.
+
+```{r}
+# Testing the relationship between ethnic groups and their waiting times with three sample designs
+# --> Stratified sample with original weights * strata weights (sample.2d)
+# --> Original design with n = N with original weights (data.design)
+# --> SRS with keeping orginal weights (sample2.c.2)
+
+# Dropping missings for plots
+
+
+data.no.missings <- data %>%
+  mutate(Design = "Original Design") %>%
+  mutate(final.weights = PATWT)
+sample.2c.2.no.missings <- sample.2c.2 %>%
+  mutate(Design = "SRS") %>%
+  mutate(final.weights = PATWT)
+sample.2d.no.missings <- sample.2d %>%
+  mutate(Design = "Stratified Sample") %>%
+  mutate(final.weights = weights.final)
+
+datasets.combined <- bind_rows(data.no.missings, sample.2c.2.no.missings, sample.2d.no.missings) %>%
+  filter_at(vars(matches("ETHUN|WAITTIME")), ~ . %!in% c(-7, -9 )) %>%
+  mutate(Ethnicity = factor(ETHUN, levels = c(1, 2), labels = c("Hispanic or Latino", "Not Hispanic or Latino")))
+  
+
+(reg.plot.Q4 <- ggplot() +
+  # geom_jitter(data = datasets.combined, 
+  #             aes(x = ETHUN, y = WAITTIME, color = dataset, weight = final.weights, size = weights.final)) +
+  geom_smooth(data = datasets.combined, 
+              aes(x = Ethnicity, y = WAITTIME, group = Design, color = Design, weight = final.weights), method = "lm", se = FALSE) +
+  labs(title = "Waiting Time over different Ethnicities and Designs", subtitle = "Question Nr. 4",
+       x = "", y = "Waiting Time in Minutes") +
+    theme_bw() +
+    theme(text = element_text(size = 15), 
+          axis.text.x = element_text(size = 13, face = "bold")))
+
+ggsave(filename = "Regression Plot Q4.png", reg.plot.Q4, device = "png")
+
+reg.data.original <- data.no.missings %>%
+  filter(Design == "Original Design")
+reg.data.original.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~final.weights, data = reg.data.original, nest = TRUE)
+
+reg.data.srs <- sample.2c.2.no.missings %>%
+  filter(Design == "SRS")
+reg.data.srs.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~final.weights, data = reg.data.srs, nest = TRUE)
+
+reg.data.stratified <- sample.2d.no.missings %>%
+  filter(Design == "Stratified Sample")
+reg.data.stratified.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~final.weights, data = reg.data.stratified, nest = TRUE)
+
+model.Q4.original <- svyglm(formula = WAITTIME ~ ETHUN, design = reg.data.original.design, data = reg.data.original)
+model.Q4.original$R2 <- 1 - model.Q4.original$deviance/model.Q4.original$null.deviance
+
+model.Q4.SRS <- svyglm(formula = WAITTIME ~ ETHUN, design = reg.data.srs.design, data = reg.data.srs)
+model.Q4.SRS$R2 <- 1 - model.Q4.SRS$deviance/model.Q4.SRS$null.deviance 
+
+model.Q4.stratified <- svyglm(formula = WAITTIME ~ ETHUN, design = reg.data.stratified.design, data = reg.data.stratified)
+model.Q4.stratified$R2 <- 1 - model.Q4.stratified$deviance/model.Q4.stratified$null.deviance 
+
+
+name.regression <- c("Original Design", "SRS", "Stratified Design")
+R2.table <- tibble(name.regression, 
+                   R2 = c(model.Q4.original$R2, model.Q4.SRS$R2, model.Q4.stratified$R2))
+  
+
+```
+
 
 two models: 
 are the individual weights the defined survey weights?
