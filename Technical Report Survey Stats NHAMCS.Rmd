@@ -55,7 +55,6 @@ data %>%
   group_by(SEX) %>% 
   summarise(n = n(), mean(PATWT))
 
-
 # Population estimates for Males and Females 
 svytotal(~interaction(SEX), data.design) 
 ```
@@ -113,7 +112,6 @@ The estimates are the same (about 45 min) but the the SE are too small for the o
 
 ```{r}
 # Drawing three srs samples from our original dataset (n = 1000, 5000, 10000) and calculating the final weights
-
 srs.names <- c("SRS.1000", "SRS.5000", "SRS.10000")
 srs.sizes <- c(1000, 5000, 10000)
 srs.samples.vec <- pmap(list(x = length(srs.sizes), y = srs.sizes), ~srswr(n = .y, N = length(data$id)))
@@ -121,19 +119,15 @@ srs.samples.vec <- pmap(list(x = length(srs.sizes), y = srs.sizes), ~srswr(n = .
 srs.samples.data <- map(srs.samples.vec, ~getdata(data, .x)) %>% 
   map2(., srs.sizes, ~mutate(.x, final.weights = PATWT * (34936 / .y)))
 
-
 # Checking if the the new combined weights approximately add up to the original N 
 map(srs.samples, ~sum(.$final.weights)) 
-
 
 # Create for each SRS sample a svydesign object with the specific weights, excluding strata and cluster info
 srs.samples.designs <- map(srs.samples.data, ~svydesign(id = ~.$id, weight = ~.$final.weights, data = .x, nest = TRUE)) %>% 
   set_names(nm = srs.names)
 
-
 # Calculating the mean estimate of WAITTIME of the SRS samples and comparing them to the designs from before
 results.srs <- map(srs.samples.designs, ~svymean(~WAITTIME, .x, na.rm = T))
-
 
 # Comparing the results 
 name.results <- c("2a Estimate (design specified)", "2b Estimate (design not specified)",
@@ -157,31 +151,36 @@ results.2 <- tibble(name.results,
 data.strata.prep <- data %>%
   arrange(REGION)
 
-# With the strata function we can draw a stratified srs. The size vector specifies the strata sample sizes 
-# Implemented PPS strata sizes
-
+# With the strata function we can draw a stratified sample. The size vector specifies the strata sample sizes 
+# Implemented PPS allocation for now and n = 10000
 strata.sizes <- data %>%
   group_by(REGION) %>%
   summarise(prop = (n() / 34936)) %>%
-  mutate(strata.size = round(prop * 5000)) %>% # --> this number can change due to sample sizes decided above
+  mutate(strata.size = round(prop * 10000)) %>%
   mutate(population.size = prop * 34936) 
 
-sample.2d.vec <- strata(data = data.strata.prep, stratanames = "REGION", size = strata.sizes$strata.size, method = "srswr")
-sample.2d <- getdata(data.strata.prep, sample.2c.2) %>%
+stratified.sample.vec <- strata(data = data.strata.prep, stratanames = "REGION", 
+                                size = strata.sizes$strata.size, method = "srswr")
+stratified.sample <- getdata(data.strata.prep, stratified.sample.vec) %>%
   left_join(strata.sizes, by = "REGION") %>% # join strata specific sizes (4 levels for 4 regions)
   mutate(weights.strata = population.size / strata.size) %>% # calculating strata specific weights (Nh / nh)
-  mutate(weights.final = PATWT * weights.strata) # Combining the original weights with the strata specific weights 
+  mutate(final.weights = PATWT * weights.strata) # Combining the original weights with the strata specific weights 
 
-sample.2d.des <- svydesign(id = ~id, weights = ~weights.final, data = sample.2d, nest = TRUE) # added new weights
-svymean(~WAITTIME, sample.2d.des, na.rm = T)
+# Checking if the the new combined weights approximately add up to the original N 
+sum(stratified.sample$final.weights) 
+
+# Defining the stratified svydesign() object with new weights and no original cluster information
+stratified.sample.design <- svydesign(id = ~id, strata = ~REGION, weights = ~final.weights, data = stratified.sample, nest = TRUE) 
+
+# Calculating the mean estimate of WAITTIME of the stratified sample
+svymean(~WAITTIME, stratified.sample.design, na.rm = T)
 
 # Testing the variability between regions concerning waiting time
-svyby(~WAITTIME, ~REGION, sample.2d.des, svymean, deff = T)
+svyby(~WAITTIME, ~REGION, stratified.sample.design, svymean, deff = T)
 ```
 
 imagine we want to do this study again but only for estimation of waiting time 
 
-the variance between the strata is higher then the variance within in strata --> strata are more similar within in then between strata --> oversample regions with higher variance for the next question
 
 ### 3. Explain that a ratio estimator can be used to improve the estimation of the average waiting time. 
 
@@ -302,6 +301,18 @@ g <- data %>%
   ggplot() +
   geom_point(aes(x = PATWT, y = WAITTIME)) +
   geom_smooth(aes(x = PATWT, y = WAITTIME))
+
+data %>% 
+  ggplot() +
+  geom_histogram(aes(log(WAITTIME)))
+
+data.new <- data %>% 
+  filter(WAITTIME %!in% c(-7, -9)) %>% 
+  mutate(WAIT.stand = (WAITTIME * mean(WAITTIME)) / sd(WAITTIME))
+
+data.new %>% 
+  ggplot() +
+  geom_histogram(aes(WAIT.stand))
 
 ```
 
