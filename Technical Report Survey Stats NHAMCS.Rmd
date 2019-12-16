@@ -50,8 +50,14 @@ data.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data =
 #### c. When considering gender differences in emergency visits, is it more likely for men than women to visit an emergency department, explain?
 
 ```{r}
-# Population estimates --> 
-svytotal(~interaction(SEX), data.design)
+# Males (2) and Femals (1) proportion
+data %>% 
+  group_by(SEX) %>% 
+  summarise(n = n(), mean(PATWT))
+
+
+# Population estimates for Males and Females 
+svytotal(~interaction(SEX), data.design) 
 ```
 
 
@@ -65,8 +71,6 @@ show the r code line of the specified design.
 
 ```{r}
 (result.2a <- svymean(~WAITTIME, data.design, na.rm = T))
-
-prop.table(table(data$WAITTIME))[2]
 ```
 
 Imputing data by Zhenwei
@@ -107,35 +111,40 @@ The estimates are the same (about 45 min) but the the SE are too small for the o
 #### c. Draw an SRS sample to estimate the average waiting time. Estimate the average waiting time, and compare the result(s) with the result(s) of 2a and 2b.
 
 
- --> sample size stick to 2000 -_> ask students and peter about this
-Implement formulas??
-
 ```{r}
-# With the srswr function we can draw a srs, which gives us a vector of the sample cases
-sample.2c.vec.1 <- srswr(n = 1000, N = length(data$id))
-sample.2c.vec.2 <- srswr(n = 5000, N = length(data$id))
-sample.2c.vec.3 <- srswr(n = 10000, N = length(data$id))
-sample.2c.1 <- getdata(data, sample.2c.vec.1)
-sample.2c.2 <- getdata(data, sample.2c.vec.2)
-sample.2c.3 <- getdata(data, sample.2c.vec.3)
+# Drawing three srs samples from our original dataset (n = 1000, 5000, 10000) and calculating the final weights
 
-# We can then create another svydesign object and estimate the average waiting time
-sample.2c.des.1 <- svydesign(id = ~id, weight = ~PATWT, data = sample.2c.1, nest = TRUE)
-sample.2c.des.2 <- svydesign(id = ~id, weight = ~PATWT, data = sample.2c.2, nest = TRUE)
-sample.2c.des.3 <- svydesign(id = ~id, weight = ~PATWT, data = sample.2c.3, nest = TRUE)
+srs.names <- c("SRS.1000", "SRS.5000", "SRS.10000")
+srs.sizes <- c(1000, 5000, 10000)
+srs.samples.vec <- pmap(list(x = length(srs.sizes), y = srs.sizes), ~srswr(n = .y, N = length(data$id)))
 
-result.2c.1 <- svymean(~WAITTIME, sample.2c.des.1, na.rm = T)
-result.2c.2 <- svymean(~WAITTIME, sample.2c.des.2, na.rm = T)
-result.2c.3 <- svymean(~WAITTIME, sample.2c.des.3, na.rm = T)
+srs.samples.data <- map(srs.samples.vec, ~getdata(data, .x)) %>% 
+  map2(., srs.sizes, ~mutate(.x, final.weights = PATWT * (34936 / .y)))
+
+
+# Checking if the the new combined weights approximately add up to the original N 
+map(srs.samples, ~sum(.$final.weights)) 
+
+
+# Create for each SRS sample a svydesign object with the specific weights, excluding strata and cluster info
+srs.samples.designs <- map(srs.samples.data, ~svydesign(id = ~.$id, weight = ~.$final.weights, data = .x, nest = TRUE)) %>% 
+  set_names(nm = srs.names)
+
+
+# Calculating the mean estimate of WAITTIME of the SRS samples and comparing them to the designs from before
+results.srs <- map(srs.samples.designs, ~svymean(~WAITTIME, .x, na.rm = T))
+
 
 # Comparing the results 
-name.results <- c("2a Estimate (design specified)", "2b Estimate (design not specified)", "2c Estimate (new srs n = 1000)",
-                  "2c Estimate (new srs n = 5000)", "2c Estimate (new srs n = 10000)")
+name.results <- c("2a Estimate (design specified)", "2b Estimate (design not specified)",
+                  "ec Estimate SRS n = 1000", "2c Estimate SRS n = 5000", "2c Estimate SRS n = 10000")
 
 # Still need to add the SEs to the table for better comparison
-results.2 <- tibble(name.results, estimates = c(result.2a, result.2b, result.2c.1, result.2c.2, result.2c.3),
-                    SE = c(map_dbl(list(result.2a, result.2b, result.2c.1, result.2c.2, result.2c.3), 
-                                   ~sqrt(attr(., which = "var")))))
+results.2 <- tibble(name.results, 
+                    estimates = c(result.2a, result.2b, results.srs[[1]], results.srs[[2]], results.srs[[3]]),
+                    SE = c(map_dbl(list(result.2a, result.2b, results.srs[[1]], results.srs[[2]], results.srs[[3]]), 
+                                   ~sqrt(attr(., which = "var")))),
+                    Bias = estimates - result.2a[[1]]) # add design effect
 
 ```
 
@@ -261,6 +270,38 @@ svyttest(WAITTIME ~ as.factor(ETHUN), design = reg.data.original.design)
 svyttest(WAITTIME ~ as.factor(ETHUN), design = reg.data.srs.design)
 svyttest(WAITTIME ~ as.factor(ETHUN), design = reg.data.stratified.design)
   
+
+```
+
+
+```{r}
+# unweighted 
+data.design.unweighted <- svydesign(id = ~id, data = data) 
+
+# Best estimate from complete design
+original <- svyby(~WAITTIME, by = ~ETHUN, svymean, design = data.design) %>% 
+  mutate(type = "orginal")
+exclude <- svyby(~WAITTIME, by = ~ETHUN, svymean, design = data.design.exc) %>% 
+  mutate(type = "exclude")
+srs <- svyby(~WAITTIME, by = ~ETHUN, svymean, design = sample.2c.des.2) %>% 
+  mutate(type = "srs")
+stratified <- svyby(~WAITTIME, by = ~ETHUN, svymean, design = sample.2d.des) %>% 
+  mutate(type = "stratified")
+unweighted <- svyby(~WAITTIME, by = ~ETHUN, svymean, design = data.design.unweighted) %>% 
+  mutate(type = "unweighted")
+
+results.weights <- bind_rows(original, exclude, srs, stratified, unweighted) %>% 
+  arrange(ETHUN, type)
+
+data %>% 
+  group_by(ETHUN) %>% 
+  summarise(sum(PATWT), sum(PATWT) / sum(data$PATWT), n(), n() / 34936)
+
+g <- data %>% 
+  filter(WAITTIME %!in%  c(-7, -9)) %>% 
+  ggplot() +
+  geom_point(aes(x = PATWT, y = WAITTIME)) +
+  geom_smooth(aes(x = PATWT, y = WAITTIME))
 
 ```
 
