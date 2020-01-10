@@ -208,8 +208,6 @@ results.2 <- tibble(name.results,
 
 #### d. Draw a stratified sample to investigate the variability in waiting times over regions (Northeast, Midwest, South, West). Is there variability in waiting times over regions?
 
-
---> hier equal pps und optimal allocation () einfügen und zusammenfügen mit der tabelle davor lecture week stratified sampling 
 ```{r}
 # In order for drawing a stratified sample we need to arrange the original dataset in ascending strata order (Region)
 data.strata.prep <- data.imputed %>%
@@ -217,14 +215,30 @@ data.strata.prep <- data.imputed %>%
 
 strata.sizes <- data.imputed %>%
   group_by(REGION) %>%
-  summarise(prop = (n() / 34936)) %>%
-  mutate(strata.size.pps = round(prop * 10000)) %>%
-  mutate(population.size = prop * 34936) 
+  summarise(prop = (n() / 34936), sd.region = sd(WAITTIME.imputed, na.rm = T)) %>%
+  mutate(population.size = prop * 34936) %>% 
+  mutate(strata.equal = 2500) %>% 
+  mutate(strata.pps = round(prop * 10000)) %>%
+  mutate(strata.neyman = round(( ((sd.region * population.size) / sum(population.size * sd.region)) * 10000 ), 0))
+
+
+
+set.seed(87)
+equal.dataset <- strata(data = data.strata.prep, stratanames = "REGION", size = strata.sizes$strata.equal, method = "srswr")
+set.seed(87)
+pps.dataset <- strata(data = data.strata.prep, stratanames = "REGION", size = strata.sizes$strata.pps, method = "srswr")
+set.seed(87)
+neyman.dataset <- strata(data = data.strata.prep, stratanames = "REGION", size = strata.sizes$strata.neyman, method = "srswr")
+
+stratified.datasets <- list(equal.dataset, pps.dataset, neyman.dataset) %>% 
+  map(~getdata(data = data.strata.prep, m = .)) %>% 
+  map(~left_join(., strata.sizes, by = "REGION")) %>% 
+  pmap(list(., list(.$strata.equal, .$strata.pps, .$strata.neyman)), ~mutate(.x, weights.strata = population.size / .y))
 
 set.seed(87)
 # Equal sizes
 stratified.equal.sample.vec <- strata(data = data.strata.prep, stratanames = "REGION", 
-                                      size = c(2500, 2500, 2500, 2500), method = "srswr")
+                                      size = strata.sizes$strata.equal, method = "srswr")
 stratified.equal.sample <- getdata(data.strata.prep, stratified.equal.sample.vec) %>%
   left_join(strata.sizes, by = "REGION") %>% # join strata specific sizes (4 levels for 4 regions)
   mutate(weights.strata = population.size / 2500) %>% # calculating strata specific weights (Nh / nh) -_> equal between strata
@@ -238,7 +252,7 @@ stratified.equalSize.sample.design <- svydesign(id = ~id, strata = ~REGION, weig
 
 set.seed(87)
 stratified.PPS.sample.vec <- strata(data = data.strata.prep, stratanames = "REGION", 
-                                    size = strata.sizes$strata.size.pps, method = "srswr")
+                                    size = strata.sizes$strata.pps, method = "srswr")
 stratified.PPS.sample <- getdata(data.strata.prep, stratified.PPS.sample.vec) %>%
   left_join(strata.sizes, by = "REGION") %>% # join strata specific sizes (4 levels for 4 regions)
   mutate(weights.strata = population.size / strata.size.pps) %>% # calculating strata specific weights (Nh / nh)
@@ -246,22 +260,6 @@ stratified.PPS.sample <- getdata(data.strata.prep, stratified.PPS.sample.vec) %>
 stratified.PPS.sample.design <- svydesign(id = ~id, strata = ~REGION, weights = ~final.weights, data = stratified.PPS.sample) 
 
 
-
-# Neyman allocation
-sd.neyman <- data.imputed %>% 
-  group_by(REGION) %>% 
-  summarise(sd.region = sd(WAITTIME.imputed, na.rm = T))
-
-neyman.region.1 <- ( (8735 * sd.neyman$sd.region[1]) / 
-                      ( (8735 * sd.neyman$sd.region[1]) + (7299 * sd.neyman$sd.region[2]) + (12458 * sd.neyman$sd.region[3]) + (6444 * sd.neyman$sd.region[4]) ) * 10000 )
-neyman.region.2 <- ( (7299 * sd.neyman$sd.region[2]) / 
-                       ( (8735 * sd.neyman$sd.region[1]) + (7299 * sd.neyman$sd.region[2]) + (12458 * sd.neyman$sd.region[3]) + (6444 * sd.neyman$sd.region[4]) ) * 10000 )
-neyman.region.3 <- ( (12458 * sd.neyman$sd.region[3]) / 
-                       ( (8735 * sd.neyman$sd.region[1]) + (7299 * sd.neyman$sd.region[2]) + (12458 * sd.neyman$sd.region[3]) + (6444 * sd.neyman$sd.region[4]) ) * 10000 )
-neyman.region.4 <- ( (6444 * sd.neyman$sd.region[4]) / 
-                       ( (8735 * sd.neyman$sd.region[1]) + (7299 * sd.neyman$sd.region[2]) + (12458 * sd.neyman$sd.region[3]) + (6444 * sd.neyman$sd.region[4]) ) * 10000 )
-neyman.region.sizes <- c(neyman.region.1, neyman.region.2, neyman.region.3, neyman.region.4)
-strata.sizes$strata.size.neyman <- round(neyman.region.sizes, 0)
 
 set.seed(87)
 stratified.neyman.sample.vec <- strata(data = data.strata.prep, stratanames = "REGION", 

@@ -1,0 +1,5 @@
+"helper.impute";"percentage.sample";"percentage.population";"sample.total";"population.total"
+"Missing, but imputable";5,28;6,06;1846;7867303
+"Missing, but not imputable";1,34;0,97;467;1257185
+"not applicable";2,77;2,67;969;3464756
+"Observed";90,61;90,3;31654;117254133

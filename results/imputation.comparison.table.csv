@@ -1,0 +1,5 @@
+"";"impute.group";"mean.weight";"mean.WAITTIME"
+"1";"Imputed";4261,81094257855;60,6122864758426
+"2";"Missing, but not imputable";2692,04496788009;NA
+"3";"Not applicable";3575,5995872033;NA
+"4";"Observed, not imputed";3704,24379225374;51,1609907120743
