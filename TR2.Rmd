@@ -323,7 +323,7 @@ mod.baseline.w.outlier.wo.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, we
 mod.srs <- srs.samples.designs[[3]]
 
 (model.Q4.srs <- svyglm(formula = WAITTIME.imputed ~ as.factor(ETHUN), design = mod.srs, 
-                            data = data.imputed))
+                        data = data.imputed))
 (model.Q4.srs$R2 <- 1 - model.Q4.srs$deviance/model.Q4.srs$null.deviance)
 
 
@@ -406,38 +406,34 @@ data.Q5 <- data.imputed %>%
                                   is.na(ARREMS) ~ "Missing or Blank"))
   
   
-# Estimate table
+##Estimate table
 
+std <- function(x) {
+  sd(x, na.rm = T)/sqrt(length(x))
+}
+# Vector helper for further group iteration
 group.vars <- grep("kind", names(data.Q5), value = T)
 group.syms <- rlang::syms(group.vars)
 
+# Creating a estimate table based on all the groups within each variable respectively
 pred.estimate.table <- map_dfr(.x = group.syms, ~ data.Q5 %>% 
                              group_by(!!.x) %>% 
                              summarise(Variable = paste(.x), 
                                        Population.total = sum(PATWT), 
                                        Total.sample = n(), 
-                                       Mean.Weight = mean(PATWT), 
-                                       Mean.WaitingTime = mean(WAITTIME.imputed, na.rm = T), 
-                                       Median.WaitingTime = median(WAITTIME.imputed, na.rm = T))) %>% 
+                                       Mean.Weight = round(mean(PATWT), 2), 
+                                       Mean.WaitingTime = round(mean(WAITTIME.imputed, na.rm = T), 2), 
+                                       SE.Mean.WaitingTime = round(std(WAITTIME.imputed), 2),
+                                       Median.WaitingTime = round(median(WAITTIME.imputed, na.rm = T), 0))) %>% 
   unite(name, group.vars, sep = "", remove = T, na.rm = T) %>% 
   select(Variable, everything())
+write.csv2(x = pred.estimate.table, file = "results/pred.estimate.table.csv", row.names = F)
   
 
-
-data.Q5 %>% 
-  ggplot() +
-  geom_jitter(aes(x = RACEUN, y = WAITTIME.log)) 
-
-a %>% 
-  ggplot() +
-  geom_histogram(aes(x = WAITTIME.imputed))
-
-a %>% 
-  group_by(RACEUN) %>% 
-  summarise(mean(WAITTIME.imputed, na.rm = T))
-
-
+# Creating a new design object with the potential predictor variables
 data.Q5.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.Q5)
+
+
 
 (model.Q5.original <- svyglm(formula = WAITTIME.imputed ~ as.factor(payment.combined) + 
                                as.factor(time.kind) + as.factor(day.kind) +
