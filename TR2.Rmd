@@ -15,14 +15,10 @@ output:
 
 ```{r}
 library(tidyverse)
-library(lubridate)
 library(survey)
 library(sampling)
-library(kableExtra)
 library(svglite)
 '%!in%' <- function(x,y)!('%in%'(x,y))
-
-set.seed(3)
 ```
 
 
@@ -41,8 +37,6 @@ data <- read_csv("nhamcsed2010-short.csv") %>%
 ```{r}
 sum(data$PATWT)
 ```
-
-Yes, the weights add up to N.
 
 #### b. Define the svydesign() function with clusters, strata, and (additional) weights.
 
@@ -92,7 +86,6 @@ data %>%
 (result.2a <- svymean(~WAITTIME, data.design, na.rm = T))
 ```
 
-Imputing data by Zhenwei
 ```{r}
 # Analysis of potentially imputable observations
 imputation.table <- data %>% 
@@ -134,11 +127,11 @@ data.imputed.filter <- data.imputed %>%
 data.design.imputed.filter <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.imputed.filter)
 
 # comparing imputation strategy with original data 
-(result.2a <- svymean(~WAITTIME, data.design, na.rm = T))
+result.2a <- svymean(~WAITTIME, data.design, na.rm = T)
 # Only the imputed ones
-(result.2a.imputed.filter <- svymean(~WAITTIME.imputed, data.design.imputed.filter, na.rm = T))
+result.2a.imputed.filter <- svymean(~WAITTIME.imputed, data.design.imputed.filter, na.rm = T)
 # combined 
-(result.2a.imputed <- svymean(~WAITTIME.imputed, data.design.imputed, na.rm = T))
+result.2a.imputed <- svymean(~WAITTIME.imputed, data.design.imputed, na.rm = T)
 
 # analysing the weights concerning the imputing.group variable
 imputation.comparison.table <- data.imputed %>% 
@@ -152,20 +145,14 @@ write.csv2(x = imputation.comparison.table, file = "results/imputation.compariso
 ```
 
 
-The average waiting time is almost 45 min. with a SE of 1.8512 --> interpretation
-Show the proportion of missings --> MCAR? about 6.6. percent, and 2.7 percent not applicable (2.7 have probably too long or felt better) --> 6.6 percent can be imputed with proportion technique about 5 decreasesd show in presentation -_> comparison
-
-
 #### b. Exclude the cluster and strata information, (redefine the svydesign), how this change your result in 2a, explain?
 
 ```{r}
 # Defining the design object but without any design specifications
 data.design.exc <- svydesign(id = ~id, weight = ~PATWT, data = data.imputed) 
 
-(result.2b <- svymean(~WAITTIME.imputed, data.design.exc, na.rm = T))
+result.2b <- svymean(~WAITTIME.imputed, data.design.exc, na.rm = T)
 ```
-
-
 
 #### c. Draw an SRS sample to estimate the average waiting time. Estimate the average waiting time, and compare the result(s) with the result(s) of 2a and 2b.
 
@@ -249,7 +236,7 @@ stratified.samples.design <- map(stratified.samples.datasets,
 
 
 # Calculating the mean estimate of WAITTIME of for all stratified samples
-results.stratified <- map(stratfied.samples, ~svymean(~WAITTIME.imputed, .x, na.rm = T))
+results.stratified <- map(stratified.samples.design, ~svymean(~WAITTIME.imputed, .x, na.rm = T))
 
 # Comparing the results and adding them to the srs comparison table
 name.stratified.results <- c("2d Estimate Equal sizes n = 10000", "2d Estimate PPS n = 10000", "2d Estimate Neyman n = 10000")
@@ -266,8 +253,6 @@ write.csv2(x = results.WT.final, file = "results/Q2.final.table.csv", row.names 
 regional.estimate <- svyby(~WAITTIME.imputed, ~REGION, stratified.samples.design[[3]], svymean, deff = T, na.rm = T) # check this 
 write.csv2(x = regional.estimate, file = "results/Q2.regional.estimate.csv", row.names = F)
 ```
-
-imagine we want to do this study again but only for estimation of waiting time 
 
 
 ### 3. Explain that a ratio estimator can be used to improve the estimation of the average waiting time. 
@@ -308,17 +293,16 @@ DV = ETHUN, IV = WAITTIME.imputed
 --> maybe plot and regression table
 
 ```{r}
-# Testing the relationship between ethnic groups and their waiting times with three sample designs
-# --> Stratified sample with original weights * strata weights (sample.2d)
-# --> Original design with n = N with original weights (data.design)
-# --> SRS with keeping orginal weights (sample2.c.2)
+## Testing the relationship between ethnic groups and their waiting times with the original design, the SRS design (n=10000) and the neyman design
 
-# Dropping missings for plots
+# regression diagnostics
+mod.Q4.diag <- lm(WAITTIME.imputed ~ as.factor(ETHUN), data = data.imputed)
+plot(mod.Q4.diag)
 
-## --> Baseline model Q4
+## Checking for influential outliers in order to possibly exclude cases
 mod.baseline.w.outlier <- data.imputed
 mod.baseline.wo.outlier <- data.imputed %>% 
-  filter(WAITTIME.imputed <= 600)
+  filter(WAITTIME.imputed <= 600) # dropping cases with waiting time higher than 10 hours (600 minutes)
 
 mod.baseline.w.outlier.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = mod.baseline.w.outlier)
 
@@ -334,7 +318,7 @@ mod.baseline.w.outlier.wo.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, we
 
 
 
-## --> SRS model 10000
+## --> SRS model n = 10000
 
 mod.srs <- srs.samples.designs[[3]]
 
@@ -343,9 +327,9 @@ mod.srs <- srs.samples.designs[[3]]
 (model.Q4.srs$R2 <- 1 - model.Q4.srs$deviance/model.Q4.srs$null.deviance)
 
 
-## --> Neymann 10000
+## --> Neymann model n = 10000
 
-mod.neyman <- stratified.neyman.sample.design
+mod.neyman <- stratified.samples.design[[3]]
 
 (model.Q4.neyman <- svyglm(formula = WAITTIME.imputed ~ as.factor(ETHUN), design = mod.neyman, 
                             data = data.imputed))
@@ -354,36 +338,92 @@ mod.neyman <- stratified.neyman.sample.design
 
 ## plots
 
-datasets.combined <- bind_rows(data.no.missings, sample.2c.2.no.missings, sample.2d.no.missings) %>%
-  filter_at(vars(matches("ETHUN|WAITTIME")), ~ . %!in% c(-7, -9 )) %>%
-  # filter(Design == "SRS") %>%
-  mutate(Ethnicity = factor(ETHUN, levels = c(1, 2), labels = c("Hispanic or Latino", "Not Hispanic or Latino")))
+datasets.combined <- list(data.imputed, srs.samples.data[[3]], stratified.samples.datasets[[3]]) %>%
+  set_names(nm = c("Original.design", "SRS", "Neyman")) %>% 
+  map_at("Original.design", ~mutate(., final.weights = PATWT)) %>% 
+  map2_dfr(c("Original design", "SRS", "Neyman"), ~mutate(.x, design.kind = paste0(.y))) %>% 
+  mutate(design.kind = factor(design.kind, levels = c("Original design", "SRS", "Neyman"), 
+                              labels = c("Original design", "SRS n = 10,000", "Neyman n = 10,000"), ordered = T)) %>% 
+  filter_at(vars(matches("ETHUN|WAITTIME")), ~ !is.na(.)) %>%
+  mutate(Ethnicity = factor(ETHUN, levels = c(1, 2), labels = c("Hispanic or Latino", "Not Hispanic or Latino"))) %>% 
+  select(Ethnicity, WAITTIME.imputed, final.weights, design.kind)
 
 (reg.plot.Q4 <- ggplot() +
-  # geom_jitter(data = datasets.combined,
-  #             aes(x = Ethnicity, y = WAITTIME, color = Design, weight = final.weights, size = weights.final)) +
   geom_smooth(data = datasets.combined, 
-              aes(x = Ethnicity, y = WAITTIME, group = Design, color = Design, weight = final.weights), method = "lm", se = FALSE) +
+              aes(x = Ethnicity, y = WAITTIME.imputed, group = design.kind, color = design.kind, weight = final.weights), 
+              method = "lm", se = F) +
   labs(title = "Waiting Time over different Ethnicities and Designs", subtitle = "Question Nr. 4",
-       x = "", y = "Waiting Time in Minutes") +
+       x = "", y = "Waiting Time in Minutes", color = "Sampling Design") +
     theme_bw() +
     theme(text = element_text(size = 15), 
           axis.text.x = element_text(size = 13, face = "bold")))
-  
+ggsave(filename = "results/plot.Q4.svg", plot = reg.plot.Q4, device = "svg")
+ggsave(filename = "results/plot.Q4.png", plot = reg.plot.Q4, device = "png")
 
 ```
-
-
-two models: 
-are the individual weights the defined survey weights?
-are the stratified weights in comparison to the individual weights related to ethnicity? What do we base the strata on? are these the same as beforehand or are these new strata that we ourselves need to define?
-is it just comparing a model with the cluster and strata info like in the beginning and one model without any info
 
 
 ### 5. Assume unequal probability sampling, can you identify the important predictor variables of waiting times of patients visiting an ED? What can be concluded?
 
 
 ```{r}
+# Manipulating variables to use them as potential predictors
+data.Q5 <- data.imputed %>% 
+  mutate(day.kind = case_when(VDAYR %in% c(2:6) ~ "Weekdays",
+                              TRUE ~ "Weekend")) %>% 
+  mutate(time = case_when(nchar(ARRTIME) == 4 ~ sub("(.{2})(.*)", "\\1:\\2", ARRTIME),
+                          nchar(ARRTIME) == 3 ~ paste0("0", sub("(.{1})(.*)", "\\1:\\2", ARRTIME)),
+                          nchar(ARRTIME) == 2 ~ paste0("00:", ARRTIME),
+                          nchar(ARRTIME) == 1 ~ paste0("00:0", ARRTIME))) %>% 
+  mutate(hour = substr(time, 1, 2)) %>% 
+  mutate(time.kind = case_when(hour %in% c(7:23) ~ "Daytime",
+                               TRUE ~ "Nighttime")) %>% 
+  mutate(payment.kind = case_when(PAYPRIV == 1 ~ "Private",
+                                      PAYMCAID == 1 | PAYMCARE == 1 & PAYPRIV == 0 ~ "Medicare/Medicaid",
+                                      TRUE ~ "No expected source of Payment")) %>% 
+  mutate(age.kind = case_when(AGE < 18 ~ "Under 18",
+                              AGE %in% c(18:65) ~ "Between 18 and 65",
+                              AGE > 65 ~ "Over 65")) %>% 
+  mutate(Residence.kind = case_when(RESIDNCE == 1 ~ "Private residence",
+                                    RESIDNCE == 2 ~ "Nursing home",
+                                    RESIDNCE == 3 ~ "Homeless",
+                                    RESIDNCE == 4 ~ "Other",
+                                    is.na(RESIDNCE) ~ "Missing or Blank")) %>% 
+  mutate(sex.kind = case_when(SEX == 1 ~ "Female",
+                              SEX == 2 ~ "Male")) %>% 
+  mutate(ethnicity.kind = case_when(ETHUN == 1 ~ "Hispanic or Latino",
+                                    ETHUN == 2 ~ "Not Hispanic or Latino",
+                                    is.na(ETHUN) ~ "Missing or Blank")) %>% 
+  mutate(race.kind = case_when(RACEUN == 1 ~ "White",
+                               RACEUN == 2 ~ "Black/African American",
+                               RACEUN == 3 ~ "Asian",
+                               RACEUN == 4 ~ "Native Hawaiian/Other Pacific Islander",
+                               RACEUN == 5 ~ "American Indian/Alaska Native",
+                               RACEUN == 6 ~ "More than one race reported",
+                               is.na(RACEUN) ~ "Missing or Blank")) %>% 
+  mutate(arrival.kind = case_when(ARREMS == 1 ~ "Arrival by Ambulance",
+                                  ARREMS == 2 ~ "No Arrival by Ambulance",
+                                  is.na(ARREMS) ~ "Missing or Blank"))
+  
+  
+# Estimate table
+
+group.vars <- grep("kind", names(data.Q5), value = T)
+group.syms <- rlang::syms(group.vars)
+
+pred.estimate.table <- map_dfr(.x = group.syms, ~ data.Q5 %>% 
+                             group_by(!!.x) %>% 
+                             summarise(Variable = paste(.x), 
+                                       Population.total = sum(PATWT), 
+                                       Total.sample = n(), 
+                                       Mean.Weight = mean(PATWT), 
+                                       Mean.WaitingTime = mean(WAITTIME.imputed, na.rm = T), 
+                                       Median.WaitingTime = median(WAITTIME.imputed, na.rm = T))) %>% 
+  unite(name, group.vars, sep = "", remove = T, na.rm = T) %>% 
+  select(Variable, everything())
+  
+
+
 data.Q5 %>% 
   ggplot() +
   geom_jitter(aes(x = RACEUN, y = WAITTIME.log)) 
@@ -395,23 +435,6 @@ a %>%
 a %>% 
   group_by(RACEUN) %>% 
   summarise(mean(WAITTIME.imputed, na.rm = T))
-
-
-
-data.Q5 <- data.imputed %>% 
-  mutate(day.kind = case_when(VDAYR %in% c(2:6) ~ "Weekdays",
-                              TRUE ~ "Weekend")) %>% 
-  mutate(time = case_when(nchar(ARRTIME) == 4 ~ sub("(.{2})(.*)", "\\1:\\2", ARRTIME),
-                          nchar(ARRTIME) == 3 ~ paste0("0", sub("(.{1})(.*)", "\\1:\\2", ARRTIME)),
-                          nchar(ARRTIME) == 2 ~ paste0("00:", ARRTIME),
-                          nchar(ARRTIME) == 1 ~ paste0("00:0", ARRTIME))) %>% 
-  mutate(hour = substr(time, 1, 2)) %>% 
-  mutate(time.kind = case_when(hour %in% c(7:23) ~ "Daytime",
-                               TRUE ~ "Nighttime")) %>% 
-  mutate(payment.combined = case_when(PAYPRIV == 1 ~ "Private",
-                                      PAYMCAID == 1 | PAYMCARE == 1 & PAYPRIV == 0 ~ "Medicare/Medicaid",
-                                      TRUE ~ "No expected source of Payment")) %>% 
-  mutate(WAITTIME.log = log(WAITTIME.imputed + 1))
 
 
 data.Q5.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.Q5)
@@ -426,7 +449,6 @@ data.Q5.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, dat
                              data = data.Q5))
 (model.Q5.original$R2 <- 1 - model.Q5.original$deviance/model.Q5.original$null.deviance)
 
-hm(data.imputed$ARRTIME)
 ```
 
 
