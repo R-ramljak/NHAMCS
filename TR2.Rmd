@@ -17,6 +17,8 @@ output:
 library(tidyverse)
 library(survey)
 library(sampling)
+library(broom)
+library(poliscidata)
 library(svglite)
 '%!in%' <- function(x,y)!('%in%'(x,y))
 ```
@@ -369,41 +371,53 @@ ggsave(filename = "results/plot.Q4.png", plot = reg.plot.Q4, device = "png")
 ```{r}
 # Manipulating variables to use them as potential predictors
 data.Q5 <- data.imputed %>% 
-  mutate(day.kind = case_when(VDAYR %in% c(2:6) ~ "Weekdays",
-                              TRUE ~ "Weekend")) %>% 
+  mutate(day.kind = factor(case_when(VDAYR %in% c(2:6) ~ "Weekdays",
+                                     TRUE ~ "Weekend"),
+                           levels = c("Weekdays", "Weekend"))) %>% 
   mutate(time = case_when(nchar(ARRTIME) == 4 ~ sub("(.{2})(.*)", "\\1:\\2", ARRTIME),
                           nchar(ARRTIME) == 3 ~ paste0("0", sub("(.{1})(.*)", "\\1:\\2", ARRTIME)),
                           nchar(ARRTIME) == 2 ~ paste0("00:", ARRTIME),
                           nchar(ARRTIME) == 1 ~ paste0("00:0", ARRTIME))) %>% 
   mutate(hour = substr(time, 1, 2)) %>% 
-  mutate(time.kind = case_when(hour %in% c(7:23) ~ "Daytime",
-                               TRUE ~ "Nighttime")) %>% 
-  mutate(payment.kind = case_when(PAYPRIV == 1 ~ "Private",
-                                      PAYMCAID == 1 | PAYMCARE == 1 & PAYPRIV == 0 ~ "Medicare/Medicaid",
-                                      TRUE ~ "No expected source of Payment")) %>% 
-  mutate(age.kind = case_when(AGE < 18 ~ "Under 18",
-                              AGE %in% c(18:65) ~ "Between 18 and 65",
-                              AGE > 65 ~ "Over 65")) %>% 
-  mutate(Residence.kind = case_when(RESIDNCE == 1 ~ "Private residence",
-                                    RESIDNCE == 2 ~ "Nursing home",
-                                    RESIDNCE == 3 ~ "Homeless",
-                                    RESIDNCE == 4 ~ "Other",
-                                    is.na(RESIDNCE) ~ "Missing or Blank")) %>% 
-  mutate(sex.kind = case_when(SEX == 1 ~ "Female",
-                              SEX == 2 ~ "Male")) %>% 
-  mutate(ethnicity.kind = case_when(ETHUN == 1 ~ "Hispanic or Latino",
-                                    ETHUN == 2 ~ "Not Hispanic or Latino",
-                                    is.na(ETHUN) ~ "Missing or Blank")) %>% 
-  mutate(race.kind = case_when(RACEUN == 1 ~ "White",
-                               RACEUN == 2 ~ "Black/African American",
-                               RACEUN == 3 ~ "Asian",
-                               RACEUN == 4 ~ "Native Hawaiian/Other Pacific Islander",
-                               RACEUN == 5 ~ "American Indian/Alaska Native",
-                               RACEUN == 6 ~ "More than one race reported",
-                               is.na(RACEUN) ~ "Missing or Blank")) %>% 
-  mutate(arrival.kind = case_when(ARREMS == 1 ~ "Arrival by Ambulance",
-                                  ARREMS == 2 ~ "No Arrival by Ambulance",
-                                  is.na(ARREMS) ~ "Missing or Blank"))
+  mutate(time.kind = factor(case_when(hour %in% c(7:23) ~ "Daytime",
+                                      TRUE ~ "Nighttime"),
+                            levels = c("Daytime", "Nighttime"))) %>%
+  mutate(age.kind = factor(case_when(AGE < 18 ~ "Under 18",
+                                     AGE %in% c(18:65) ~ "Between 18 and 65",
+                                     AGE > 65 ~ "Over 65"), 
+                           levels = c("Under 18", "Between 18 and 65", "Over 65"))) %>% 
+  mutate(sex.kind = factor(case_when(SEX == 1 ~ "Female",
+                                     SEX == 2 ~ "Male"),
+                           levels = c("Female", "Male"))) %>%
+  mutate(ethnicity.kind = factor(case_when(ETHUN == 1 ~ "Hispanic or Latino",
+                                           ETHUN == 2 ~ "Not Hispanic or Latino",
+                                           is.na(ETHUN) ~ "Missing or Blank"),
+                                 levels = c("Hispanic or Latino", "Not Hispanic or Latino", "Missing or Blank"))) %>%
+  mutate(race.kind = factor(case_when(RACEUN == 1 ~ "White",
+                                      RACEUN == 2 ~ "Black/African American",
+                                      RACEUN == 3 ~ "Asian",
+                                      RACEUN == 4 ~ "Native Hawaiian/Other Pacific Islander",
+                                      RACEUN == 5 ~ "American Indian/Alaska Native",
+                                      RACEUN == 6 ~ "More than one race reported",
+                                      is.na(RACEUN) ~ "Missing or Blank"),
+                            levels = c("White", "Black/African American", "Asian", "Native Hawaiian/Other Pacific Islander",
+                            "American Indian/Alaska Native", "More than one race reported", "Missing or Blank"))) %>%
+  mutate(residence.kind = factor(case_when(RESIDNCE == 1 ~ "Private residence",
+                                           RESIDNCE == 2 ~ "Nursing home",
+                                           RESIDNCE == 3 ~ "Homeless",
+                                           RESIDNCE == 4 ~ "Other",
+                                           is.na(RESIDNCE) ~ "Missing or Blank"),
+                                 levels = c("Private residence", "Nursing home", "Homeless", "Other", "Missing or Blank"))) %>%
+  mutate(arrival.kind = factor(case_when(ARREMS == 1 ~ "Arrival by Ambulance",
+                                         ARREMS == 2 ~ "No Arrival by Ambulance",
+                                         is.na(ARREMS) ~ "Missing or Blank"),
+                               levels = c("Arrival by Ambulance", "No Arrival by Ambulance", "Missing or Blank"))) %>%
+  mutate(payment.kind = factor(case_when(PAYPRIV == 1 ~ "Private",
+                                         PAYMCAID == 1 | PAYMCARE == 1 & PAYPRIV == 0 ~ "Medicare/Medicaid",
+                                         TRUE ~ "No expected source of Payment"),
+                               levels = c("Private", "Medicare/Medicaid", "No expected source of Payment")))
+  
+  
   
   
 ##Estimate table
@@ -433,17 +447,43 @@ write.csv2(x = pred.estimate.table, file = "results/pred.estimate.table.csv", ro
 # Creating a new design object with the potential predictor variables
 data.Q5.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.Q5)
 
+predictor.helper <- list(mod1 = c("day.kind"),
+                         mod2 = c("day.kind", "time.kind"),
+                         mod3 = c("day.kind", "time.kind", "age.kind"),
+                         mod4 = c("day.kind", "time.kind", "age.kind", "sex.kind"),
+                         mod5 = c("day.kind", "time.kind", "age.kind", "sex.kind", "ethnicity.kind"),
+                         mod6 = c("day.kind", "time.kind", "age.kind", "sex.kind", "ethnicity.kind", "race.kind"),
+                         mod7 = c("day.kind", "time.kind", "age.kind", "sex.kind", "ethnicity.kind", "race.kind", "arrival.kind"),
+                         mod8 = c("day.kind", "time.kind", "age.kind", "sex.kind", "ethnicity.kind", "race.kind", "arrival.kind",
+                                  "residence.kind"),
+                         mod9 = c("day.kind", "time.kind", "age.kind", "sex.kind", "ethnicity.kind", "race.kind", "arrival.kind",
+                                  "residence.kind", "payment.kind"))
 
+models.Q5 <- predictor.helper %>% 
+  map(~svyglm(as.formula(paste("WAITTIME.imputed ~", paste(.x, collapse = "+"))),
+                                          design = data.Q5.design, 
+                                          data = data.Q5))
 
-(model.Q5.original <- svyglm(formula = WAITTIME.imputed ~ as.factor(payment.combined) + 
-                               as.factor(time.kind) + as.factor(day.kind) +
-                               as.factor(RESIDENCE) + as.factor(RACEUN),
-                             design = data.Q5.design, 
-                             data = data.Q5))
-(model.Q5.original <- svyglm(formula = WAITTIME.log ~ as.factor(RACEUN),
-                             design = data.Q5.design, 
-                             data = data.Q5))
-(model.Q5.original$R2 <- 1 - model.Q5.original$deviance/model.Q5.original$null.deviance)
+fit.table <- models.Q5 %>% 
+  map(~append(., tibble(r2 = fit.svyglm(.x)[1], adj.r2 = fit.svyglm(.x)[2]))) %>% 
+  map2_dfr(., names(predictor.helper), ~tibble(Model = .y, n = length(.x$fitted.values), r2 = .x$r2, adj.r2 = .x$adj.r2)) %>% 
+  pivot_longer(-Model, names_to = "key", values_to = "value", values_ptypes = list(value = 'character')) %>% 
+  pivot_wider(names_from = Model, values_from = value) %>% 
+  rename(term = key)
+
+predictors.table <- models.Q5 %>% 
+  map(~tidy(.)) %>% 
+  map2(names(predictor.helper), ~mutate(.x, Model = .y)) %>% 
+  map_dfr(~select(., Model, everything())) %>% 
+  mutate(sig = case_when(p.value > 0.05 ~ "",
+                         p.value <= 0.05 & p.value > 0.01 ~ "*",
+                         p.value <= 0.01 & p.value > 0.001 ~ "**",
+                         p.value < 0.001 ~ "***")) %>% 
+  mutate(estimate.new = paste0(round(estimate, 2), " ", sig, " (", round(std.error, 2), ")")) %>% 
+  select(Model, term, estimate.new) %>% 
+  pivot_wider(names_from = c(Model), values_from = estimate.new) %>% 
+  bind_rows(fit.table)
+write.csv2(x = predictors.table, file = "results/predictors.table.csv", row.names = F)
 
 ```
 
