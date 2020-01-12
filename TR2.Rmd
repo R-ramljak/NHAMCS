@@ -15,21 +15,23 @@ output:
 
 ```{r}
 library(tidyverse)
+library(broom)
 library(survey)
 library(sampling)
-library(broom)
 library(poliscidata)
 library(svglite)
 '%!in%' <- function(x,y)!('%in%'(x,y))
+# setwd("~/Desktop/Studie/M&S/R") # Set this to the directory where your "nhamcsed2010-short.csv" is present
 ```
 
 
 ```{r}
-data <- read_csv("nhamcsed2010-short.csv") %>%
-  rownames_to_column("id") %>% 
-  mutate_at(vars(-LOV, -WAITTIME), ~replace(., . < 0, NA)) # Defining almost all "Missings" as NA only keeping them in LOV and WAITTIME
-
+data <- read_csv("nhamcsed2010-short.csv") %>% # Place the file in R working memory
+  rownames_to_column("id") %>% # The first column now contains the row numbers under the label "id"
+  mutate_at(vars(-LOV, -WAITTIME), ~replace(., . < 0, NA)) # All values below 0 (the "missings") are set to NA. For WAITTIME and LOV however, the values below 0 are kept
 ```
+
+
 
 
 ### 1. The variable CPSUM represents geographic primary sampling units (clusters), a variable CSTRATM represents relevant strata (e.g., emergency service areas within emergency departments or outpatient departments), variable PATWT represents an additional patient visit weight variable.
@@ -37,18 +39,26 @@ data <- read_csv("nhamcsed2010-short.csv") %>%
 #### a. Explain this multistage sampling design. Do the PATWT weights sum up to N, and what does this mean?
 
 ```{r}
-sum(data$PATWT)
+sum(data$PATWT) # Take the sum of all datapoints in variable PATWT
 ```
 
 #### b. Define the svydesign() function with clusters, strata, and (additional) weights.
 
 ```{r}
-data.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data)
+data.first <- data %>% 
+  mutate(WAITTIME = replace(WAITTIME, WAITTIME < 0, values = NA)) # Creating a temporary data frame that also sets negative value for Waiting time to NA
+
+data.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.first) # Specification of survey design using survey package
 ```
 
 #### c. When considering gender differences in emergency visits, is it more likely for men than women to visit an emergency department, explain?
 
 ```{r}
+# Note: In this dataset males and females are coded as following:
+
+# 1 --> Female
+# 2 --> Male
+
 # Population estimates for Males and Females 
 svytotal(~interaction(SEX), data.design) 
 ```
@@ -57,26 +67,35 @@ svytotal(~interaction(SEX), data.design)
 #### d. Is there a mean difference between males and females in weights (PATWT), what do you conclude from this?
 
 ```{r}
-# Males (2) and Females (1) proportion
+# Summarise data
 data %>% 
-  group_by(SEX) %>% 
-  summarise(n = n(), mean.weight = mean(PATWT))
+  group_by(SEX) %>% # Group the data into male and female
+  summarise(n = n(), mean(PATWT)) # Count the number of males and females, and show their means
 ```
 
 
 #### Further discussing the weights --> Piet can you make a nicer graph please
 
 ```{r}
-weight.summary <- data %>% 
-  group_by(PATWT) %>% 
-  summarise(number = n()) %>% 
-  arrange(PATWT)
+# Exploring the weights
+weight.summary <- data %>%      # Creates new variable which uses 'data'
+  group_by(PATWT) %>%           # Group data by weights
+  summarise(number = n()) %>%   # Count how many of each weights are present in 'data'
+  arrange(PATWT)                # Sort them low to high
+n_distinct(data$PATWT)          # Gives the amount of unique weights as output
 
-n_distinct(weight.summary$PATWT)
-
-data %>% 
+# Histogram of weights variable PATWT
+PATWT.plot <- data %>% 
   ggplot() +
-  geom_histogram(aes(x = PATWT))
+  geom_histogram(aes(x = PATWT), bins = 410) +
+  labs(title = "Histogram of survey weights 'PATWT'", 
+      x = "PATWT (weights)", y = "Amount") +
+  theme_bw() +
+  theme(text = element_text(size = 15)) +
+  scale_x_continuous(limits = c(0, 15100)) 
+
+ggsave(filename = "results/PATWT.plot.svg", plot = PATWT.plot, device = "svg")
+ggsave(filename = "results/PATWT.plot.png", plot = PATWT.plot, device = "png")
 ```
 
 
@@ -85,57 +104,66 @@ data %>%
 #### a. What do you conclude?
 
 ```{r}
-(result.2a <- svymean(~WAITTIME, data.design, na.rm = T))
+(result.2a <- svymean(~WAITTIME, data.design, na.rm = T)) # Calculate mean waiting time taking the survey design into account
 ```
 
 ```{r}
-# Analysis of potentially imputable observations
+# Analysis of missing data and potentially imputable observations by using the total length of visit (LOV)
 imputation.table <- data %>% 
+    # Mutate creates a new variable called helper.impute
+  # In this new variable, case_when functions as an if-then statement
+  # "Missing, but not imputable" = -9 on both WAITTIME and LOV
+  # "Missing, but imputable" = -9 on WAITTIME but not -9 on LOV
+  # "not applicable" = -7 on WAITTIME
+  # "Observed" = complete observations
   mutate(helper.impute = case_when(WAITTIME == -9 & LOV == -9 ~ "Missing, but not imputable",
                                    WAITTIME == -9 & LOV != -9 ~ "Missing, but imputable",
                                    WAITTIME == -7 ~ "not applicable",
-                                   TRUE ~ "Observed")) %>% 
-  group_by(helper.impute) %>% 
-  summarise(percentage.sample = round( (n()/34936) * 100, 2),
+                                   TRUE ~ "Observed")) %>% # TRUE functions as 'everything else' 
+  group_by(helper.impute) %>% # Now we sort data by the four categories made
+  # Here we create descriptive statistics about the missing values
+  summarise(percentage.sample = round( (n()/34936) * 100, 2), 
             percentage.population = round((sum(PATWT)/129843377) * 100, 2),
             sample.total = n(),
             population.total = sum(PATWT))
+# Create a csv table for Appendix 
 write.csv2(file = "results/imputatation.table.csv", x = imputation.table, row.names = F)
 
                                 
-# Imputing values single imputation by calculating the average waiting time proportion and multiplying it by the individual LOV time
+# Imputing values single imputation by calculating the average waiting time proportion and multiplying it by the  LOV time
 data.imputed <- data %>%
+  # First we create a variable which contains the waiting time proportion of length of visit (under the condition that both values are observed)
   mutate(WAITTIME.prop = case_when(WAITTIME != -9 & WAITTIME != -7 & LOV != -9 ~ WAITTIME/LOV,
                                  TRUE ~ NA_real_)) %>%
+  # Then we multiply the waiting time/length-of-visit proportion with length of visit. This is done under the condition that WAITTIME equals -7 and LOV is not missing. 
   mutate(WAITTIME.imputed = case_when(WAITTIME != -9 & WAITTIME != -7 ~ WAITTIME,
                                       WAITTIME == -7 ~ -7,
-                                      WAITTIME == -9 & LOV != -9 ~ LOV * weighted.mean(x = WAITTIME.prop, w = PATWT,
+                                      WAITTIME == -9 & LOV != -9 ~ LOV * weighted.mean(x = WAITTIME.prop, 
+                                                                                       w = PATWT,
                                                                                        na.rm = T))) %>% 
+  # Here we keep track of what we have done and save this in variable impute.group
   mutate(impute.group = case_when(WAITTIME != -9 & WAITTIME != -7 ~ "Observed, not imputed",
                                   WAITTIME == -7  ~ "Not applicable",
                                   WAITTIME == -9 & LOV != -9 ~ "Imputed",
                                   TRUE ~ "Missing, but not imputable")) %>% 
+  # Finally we turn the remaining missing values into NA
   mutate(WAITTIME.imputed = case_when(WAITTIME.imputed %in% c(-7, -9) ~ NA_real_,
                                       TRUE ~ WAITTIME.imputed))
 
-# summary statistics for waiting time proportion
-weighted.mean(data.imputed$WAITTIME.prop, w = data.imputed$PATWT, na.rm = T)
-
-# new design with imputed values for waiting time
+# Summary statistics for waiting time/length-of-visit proportion
+weighted.mean(data.imputed$WAITTIME.prop, w = data.imputed$PATWT, na.rm = T) # Calcuates the ratio we use for imputation
+# New design with imputed values for waiting time
 data.design.imputed <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.imputed)
-
 data.imputed.filter <- data.imputed %>% 
-  filter(impute.group == "Imputed")
+  filter(impute.group == "Imputed") # This creates a variable containing only the imputed data
 data.design.imputed.filter <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.imputed.filter)
-
-# comparing imputation strategy with original data 
+# Comparing imputation strategy with original data 
 result.2a <- svymean(~WAITTIME, data.design, na.rm = T)
 # Only the imputed ones
 result.2a.imputed.filter <- svymean(~WAITTIME.imputed, data.design.imputed.filter, na.rm = T)
-# combined 
+# Combined 
 result.2a.imputed <- svymean(~WAITTIME.imputed, data.design.imputed, na.rm = T)
-
-# analysing the weights concerning the imputing.group variable
+# Analysing the weights concerning the imputing.group variable
 imputation.comparison.table <- data.imputed %>% 
   mutate(LOV.new = case_when(LOV == -9 ~ NA_real_,
                              TRUE ~ LOV)) %>% 
@@ -173,7 +201,7 @@ srs.samples.data <- map(srs.samples.vec, ~getdata(data.imputed, .x)) %>%
 map(srs.samples.data, ~sum(.$final.weights)) 
 
 # Create for each SRS sample a svydesign object with the specific weights, excluding strata and cluster info
-srs.samples.designs <- map(srs.samples.data, ~svydesign(id = ~.$id, weight = ~.$final.weights, data = .x, nest = TRUE)) %>% 
+srs.samples.designs <- map(srs.samples.data, ~svydesign(id = ~id, weight = ~final.weights, data = .)) %>% 
   set_names(nm = srs.names)
 
 # Calculating the mean estimate of WAITTIME of the SRS samples and comparing them to the designs from before
@@ -261,38 +289,21 @@ write.csv2(x = regional.estimate, file = "results/Q2.regional.estimate.csv", row
 
 #### b. Describe potential variables for ratio estimation, and choose one to compute a ratio estimate of the average weighting time. 
 
-```{r}
-ratio.3 <- svyratio(~WAITTIME.imputed, ~ARREMS, design = data.design.imputed, na.rm = T)
-ratio.3.predict <- predict(ratio.3, total = mean(data.imputed$ARREMS, na.rm = T), interval = "confidence")
-```
-
-
-ratio ambulance groups on waiting time
-
 #### c. Give a 95% confidence interval for your preferable estimate of the average waiting time, and explain the result.
 
 ```{r}
+# Calculating a ratio estimator and its corresponding CI with the variable ARREMS --> If one arrived by ambulance or not
+ratio.3 <- svyratio(~WAITTIME.imputed, ~ARREMS, design = data.design.imputed, na.rm = T)
+ratio.3.predict <- predict(ratio.3, total = mean(data.imputed$ARREMS, na.rm = T), interval = "confidence")
+
 ci.lb <- ratio.3.predict$total - (ratio.3.predict$se * 1.96) 
 ci.ub <- ratio.3.predict$total + (ratio.3.predict$se * 1.96) 
 ci <- c(ci.lb, ci.ub)
 ```
 
 
-
 ### 4. Investigate differences in waiting times among ethnic groups by fitting a linear regression model. Compare estimated results of a stratified sampling design and an unequal probability sampling design.
 
-DV = ETHUN, IV = WAITTIME.imputed
---> Baseline model = data.design.imputed
---> Stratified sample = neyman allocation
---> unqueal probs = srs.samples.data[3]
-
---> Check conditions
-- Homoscedasticity
-- independence limitations
-- normal residuals
-- outlier control --> cooks distance, leverage
-
---> maybe plot and regression table
 
 ```{r}
 ## Testing the relationship between ethnic groups and their waiting times with the original design, the SRS design (n=10000) and the neyman design
@@ -306,14 +317,18 @@ mod.baseline.w.outlier <- data.imputed
 mod.baseline.wo.outlier <- data.imputed %>% 
   filter(WAITTIME.imputed <= 600) # dropping cases with waiting time higher than 10 hours (600 minutes)
 
+# Design with ourliers
 mod.baseline.w.outlier.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = mod.baseline.w.outlier)
 
-mod.baseline.w.outlier.wo.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = mod.baseline.wo.outlier)
+# Design without outliers
+mod.baseline.wo.outlier.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = mod.baseline.wo.outlier)
 
+# Regression with outliers
 (model.Q4.original <- svyglm(formula = WAITTIME.imputed ~ as.factor(ETHUN), design = mod.baseline.w.outlier.design, 
                             data = mod.baseline.w.outlier))
 (model.Q4.original$R2 <- 1 - model.Q4.original$deviance/model.Q4.original$null.deviance)
 
+# Regression without outliers
 (model.Q4.original.wo.outlier <- svyglm(formula = WAITTIME.imputed ~ as.factor(ETHUN), design = mod.baseline.w.outlier.wo.design, 
                                        data = mod.baseline.wo.outlier))
 (model.Q4.original.wo.outlier$R2 <- 1 - model.Q4.original.wo.outlier$deviance/model.Q4.original.wo.outlier$null.deviance)
@@ -429,7 +444,7 @@ std <- function(x) {
 group.vars <- grep("kind", names(data.Q5), value = T)
 group.syms <- rlang::syms(group.vars)
 
-# Creating a estimate table based on all the groups within each variable respectively
+# Creating a descriptives table based on all the groups within each variable respectively
 pred.estimate.table <- map_dfr(.x = group.syms, ~ data.Q5 %>% 
                              group_by(!!.x) %>% 
                              summarise(Variable = paste(.x), 
@@ -447,6 +462,7 @@ write.csv2(x = pred.estimate.table, file = "results/pred.estimate.table.csv", ro
 # Creating a new design object with the potential predictor variables
 data.Q5.design <- svydesign(id = ~CPSUM, strata = ~CSTRATM, weight = ~PATWT, data = data.Q5)
 
+# Predictor variable helper for easy iterating different models
 predictor.helper <- list(mod1 = c("day.kind"),
                          mod2 = c("day.kind", "time.kind"),
                          mod3 = c("day.kind", "time.kind", "age.kind"),
@@ -459,11 +475,13 @@ predictor.helper <- list(mod1 = c("day.kind"),
                          mod9 = c("day.kind", "time.kind", "age.kind", "sex.kind", "ethnicity.kind", "race.kind", "arrival.kind",
                                   "residence.kind", "payment.kind"))
 
+# Stepwise Regression models for Q5
 models.Q5 <- predictor.helper %>% 
   map(~svyglm(as.formula(paste("WAITTIME.imputed ~", paste(.x, collapse = "+"))),
                                           design = data.Q5.design, 
                                           data = data.Q5))
 
+# Building a table with GOF measures of all the tables
 fit.table <- models.Q5 %>% 
   map(~append(., tibble(r2 = fit.svyglm(.x)[1], adj.r2 = fit.svyglm(.x)[2]))) %>% 
   map2_dfr(., names(predictor.helper), ~tibble(Model = .y, n = length(.x$fitted.values), r2 = .x$r2, adj.r2 = .x$adj.r2)) %>% 
@@ -471,6 +489,7 @@ fit.table <- models.Q5 %>%
   pivot_wider(names_from = Model, values_from = value) %>% 
   rename(term = key)
 
+# Building a table with all the estimate measures + appending the GOF measures to it and making it ready for publication in word
 predictors.table <- models.Q5 %>% 
   map(~tidy(.)) %>% 
   map2(names(predictor.helper), ~mutate(.x, Model = .y)) %>% 
@@ -487,4 +506,20 @@ write.csv2(x = predictors.table, file = "results/predictors.table.csv", row.name
 
 ```
 
+```{r}
+
+a <- data.Q5 %>% 
+  group_by(CPSUM, ethnicity.kind) %>% 
+  summarise(pop.group = sum(PATWT), mean.wait = mean(WAITTIME.imputed, na.rm = T)) %>%
+  mutate(percentage.population = pop.group / sum(pop.group)) %>%
+  filter(!ethnicity.kind == "Missing or Blank") %>% 
+  pivot_wider(CPSUM, names_from = ethnicity.kind, values_from = c(mean.wait, percentage.population)) %>% 
+  mutate(wait.diff = abs(`mean.wait_Not Hispanic or Latino` - `mean.wait_Hispanic or Latino`)) %>% 
+  mutate(pop.diff = abs(`percentage.population_Hispanic or Latino` - `percentage.population_Not Hispanic or Latino`)) %>% 
+  mutate(majority = case_when(`percentage.population_Hispanic or Latino` > `percentage.population_Not Hispanic or Latino` ~ "Hispanic",
+                              `percentage.population_Hispanic or Latino` == `percentage.population_Not Hispanic or Latino` ~ "None",
+                              TRUE ~ "Not Hispanic")) %>% 
+  ggplot() +
+  geom_point(aes(x = pop.diff, y = wait.diff, color = majority))
+```
 
