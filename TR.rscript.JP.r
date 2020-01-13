@@ -492,11 +492,10 @@ write.csv2(x = predictors.table, file = "results/predictors.table.csv", row.name
 
 
 
-
-
-a <- data.Q5 %>% 
+# Further scrutinization of waiting time differences on the cluster level
+cluster.level <- data.Q5 %>% 
   group_by(CPSUM, ethnicity.kind) %>% 
-  summarise(pop.group = sum(PATWT), mean.wait = mean(WAITTIME.imputed, na.rm = T)) %>%
+  summarise(pop.group = sum(PATWT), mean.wait = weighted.mean(WAITTIME.imputed, w = PATWT, na.rm = T)) %>%
   mutate(percentage.population = pop.group / sum(pop.group)) %>%
   filter(!ethnicity.kind == "Missing or Blank") %>% 
   pivot_wider(CPSUM, names_from = ethnicity.kind, values_from = c(mean.wait, percentage.population)) %>% 
@@ -504,8 +503,18 @@ a <- data.Q5 %>%
   mutate(pop.diff = abs(`percentage.population_Hispanic or Latino` - `percentage.population_Not Hispanic or Latino`)) %>% 
   mutate(majority = case_when(`percentage.population_Hispanic or Latino` > `percentage.population_Not Hispanic or Latino` ~ "Hispanic",
                               `percentage.population_Hispanic or Latino` == `percentage.population_Not Hispanic or Latino` ~ "None",
-                              TRUE ~ "Not Hispanic")) %>% 
+                              TRUE ~ "Not Hispanic"))
+cluster.dif.plot <- cluster.level %>% 
+  filter(!majority == "None") %>% 
   ggplot() +
-  geom_point(aes(x = pop.diff, y = wait.diff, color = majority))
+  geom_point(aes(x = pop.diff, y = wait.diff, color = majority)) +
+  labs(title = "Waiting Time difference on the cluster level",
+       x = "Degree of population difference", y = "Estimated mean waiting time difference", color = "Population majority") +
+  theme_bw() +
+  theme(text = element_text(size = 15))
+ggsave(filename = "results/cluster.dif.plot.svg", plot = cluster.dif.plot, device = "svg")
+ggsave(filename = "results/cluster.dif.plot.png", plot = cluster.dif.plot, device = "png")
+
+cor(cluster.level$pop.diff, cluster.level$wait.diff, use = "complete.obs")
 
 
